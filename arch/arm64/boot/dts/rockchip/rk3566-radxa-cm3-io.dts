@@ -61,26 +61,26 @@
 		regulator-boot-on;
 	};
 
-	rk817_sound: rk817-sound {
+	sound_i2s1 {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "PCM5102a I2S1-M1";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <64>;
+		simple-audio-card,frame-master = <&cpu_master>;
+		simple-audio-card,bitclock-master = <&cpu_master>;
 		status = "okay";
-		compatible = "rockchip,multicodecs-card";
-		rockchip,card-name = "rockchip-rk817";
-		rockchip,format = "i2s";
-		rockchip,mclk-fs = <256>;
-		rockchip,cpu = <&i2s1_8ch>;
-		rockchip,codec = <&rk817_codec>;
-		poll-interval = <100>;
-		io-channels = <&saradc 2>;
-		io-channel-names = "adc-detect";
-		keyup-threshold-microvolt = <1800000>;
-		pinctrl-0 = <&hp_det>;
-		pinctrl-names = "default";
-		hp-det-gpio = <&gpio4 RK_PC4 GPIO_ACTIVE_HIGH>;
-		play-pause-key {
-			label = "playpause";
-			linux,code = <164>;
-			press-threshold-microvolt = <2000>;
+
+		cpu_master: simple-audio-card,cpu {
+				sound-dai = <&i2s1_8ch>;
 		};
+		simple-audio-card,codec {
+				sound-dai = <&pcm5102a>;
+		};
+	};
+
+	pcm5102a: pcm5102a {
+		compatible = "ti,pcm5102a";
+		#sound-dai-cells = <0>;
 	};
 
 	fan0: pwm-fan {
@@ -88,28 +88,6 @@
 		#cooling-cells = <2>;
 		cooling-levels = <0 64 128 192 255>;
 		pwms = <&pwm0 0 10000 0>;
-	};
-
-	vcc_ch482d1: vcc-ch482d1 {
-		compatible = "regulator-fixed";
-		gpio = <&gpio3 RK_PC7 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ch482d_en1>;
-		regulator-name = "vcc_ch482d1";
-		regulator-always-on;
-		regulator-boot-on;
-		status = "okay";
-	};
-
-	vcc_ch482d2: vcc-ch482d2 {
-		compatible = "regulator-fixed";
-		gpio = <&gpio3 RK_PC6 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ch482d_en2>;
-		regulator-name = "vcc_ch482d2";
-		regulator-always-on;
-		regulator-boot-on;
-		status = "okay";
 	};
 
 };
@@ -134,12 +112,14 @@
 };
 
 &i2s1_8ch {
-	rockchip,clk-trcm = <1>;
-	pinctrl-0 = <&i2s1m0_sclktx
-		     &i2s1m0_lrcktx
-		     &i2s1m0_sdi0
-		     &i2s1m0_sdo0>;
-	status = "okay";
+    rockchip,clk-trcm = <1>;
+    rockchip,bclk-fs = <64>;
+    pinctrl-0 = <&i2s1m1_sclktx
+				&i2s1m1_lrcktx
+				&i2s1m1_sdi0
+				&i2s1m1_sdo0
+				&i2s1m1_mclk>;
+    status = "okay";
 };
 
 &display_subsystem {
@@ -261,6 +241,12 @@
 };
 
 &pinctrl {
+	i2s1 {
+		i2s1m1_mclk: i2s1m1-mclk {
+			rockchip,pins = <3 RK_PC6 4 &pcfg_pull_none>;
+		};
+	};
+
 	headphone {
 		hp_det: hp-det {
 			rockchip,pins = <4 RK_PC4 RK_FUNC_GPIO &pcfg_pull_up>;
@@ -290,16 +276,6 @@
 
 		tf_det_en: tf-det-en {
 			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_output_low>;
-		};
-	};
-
-	ch482d {
-		ch482d_en1: ch482d-en1 {
-			rockchip,pins = <3 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-
-		ch482d_en2: ch482d-en2 {
-			rockchip,pins = <3 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
