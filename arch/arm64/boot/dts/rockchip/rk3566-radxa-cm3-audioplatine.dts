@@ -81,18 +81,27 @@
 };
 
 &sdmmc0 {
-	max-frequency = <10000000>;
-	supports-sd;
+	status = "okay";
 	bus-width = <4>;
-	cap-mmc-highspeed;
-	cap-sd-highspeed;
-	disable-wp;
-	//sd-uhs-sdr104;
-	// vmmc-supply = <&vcc_sd>;
+
+	vmmc-supply = <&vccio_sd>;
 	vqmmc-supply = <&vccio_sd>;
+	no-1-8-v;
+
+	//max-frequency = <25000000>;
+	max-frequency = <50000000>; 
+	cap-sd-highspeed;
+	/delete-property/ sd-uhs-sdr104;
+	/delete-property/ sd-uhs-sdr50;
+    /delete-property/ sd-uhs-sdr25;
+    /delete-property/ sd-uhs-ddr50;
+
+	//supports-sd;
+	//cap-mmc-highspeed;
+	//sd-uhs-sdr104;
+	disable-wp;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
-	status = "okay";
 };
 
 &u2phy0_host {
