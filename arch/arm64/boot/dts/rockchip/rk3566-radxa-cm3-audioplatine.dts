@@ -147,7 +147,7 @@
 		reset-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
 	};
 
-	max98396_b: amplifier@3C {
+	max98396_b: amplifier@3c {
 		compatible = "adi,max98397";
 		reg = <0x3C>;
 
@@ -156,7 +156,7 @@
 		adi,bypass-slot-no = <1>;
 		
 		pinctrl-names = "default";
-		pinctrl-0 = <&max98396_a_reset>;
+		pinctrl-0 = <&max98396_b_reset>;
 		reset-gpios = <&gpio4 RK_PD1 GPIO_ACTIVE_LOW>;
 	};
 };
