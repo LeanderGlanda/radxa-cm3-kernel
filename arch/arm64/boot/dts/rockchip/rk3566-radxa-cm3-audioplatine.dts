@@ -129,15 +129,36 @@
 &i2c2 {
 	status = "okay";
 	pinctrl-names = "default";
-	pinctrl-0 = <&i2c2m1_xfer>;
-	/*hym8563: hym8563@51 {
-		compatible = "haoyu,hym8563";
-		status = "okay";
-		reg = <0x51>;
-		#clock-cells = <0>;
-		clock-frequency = <32768>;
-		clock-output-names = "hym8563";
-	};*/
+	pinctrl-0 = <&i2c2m0_xfer>;
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	max98396_a: amplifier@39 {
+		compatible = "adi,max98397";
+		reg = <0x39>;
+
+		adi,vmon-slot-no = <0>;
+		adi,imon-slot-no = <1>;
+		adi,bypass-slot-no = <0>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&max98396_a_reset>;
+		reset-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
+	};
+
+	max98396_b: amplifier@3C {
+		compatible = "adi,max98397";
+		reg = <0x3C>;
+
+		adi,vmon-slot-no = <2>;
+		adi,imon-slot-no = <3>;
+		adi,bypass-slot-no = <1>;
+		
+		pinctrl-names = "default";
+		pinctrl-0 = <&max98396_a_reset>;
+		reset-gpios = <&gpio4 RK_PD1 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &rk817 {
@@ -189,6 +210,16 @@
 		/*tf_det_en: tf-det-en {
 			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_output_low>;
 		};*/
+	};
+
+	max98396 {
+		max98396_a_reset: max98396-a-reset {
+			rockchip,pins = <0 RK_PD6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		max98396_b_reset: max98396-b-reset {
+			rockchip,pins = <4 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
 	};
 };
 
