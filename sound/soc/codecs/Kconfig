@@ -388,6 +388,17 @@ config SND_SOC_ADAU1701
 	depends on I2C
 	select SND_SOC_SIGMADSP_I2C
 
+config SND_SOC_ADAU1452
+	tristate "Analog Devices ADAU1452 CODEC (firmware loader only)"
+	depends on I2C
+	help
+	  Minimal driver to load ADAU1452 SigmaDSP firmware over I2C.
+	  Select this to build the firmware loader which uses the
+	  sigmadsp I2C helpers. This driver does not provide ADC/DAC
+	  controls; it only loads the firmware blob (adau1452.bin).
+
+	select SND_SOC_SIGMADSP_I2C
+
 config SND_SOC_ADAU17X1
 	tristate
 	select SND_SOC_SIGMADSP_REGMAP

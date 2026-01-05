@@ -54,7 +54,7 @@
 
 	sound_i2s1 {
 		compatible = "simple-audio-card";
-		simple-audio-card,name = "PCM5102a I2S1-M1";
+		simple-audio-card,name = "ADAU1452 I2S1-M1";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <64>;
 		simple-audio-card,frame-master = <&cpu_master>;
@@ -65,13 +65,8 @@
 				sound-dai = <&i2s1_8ch>;
 		};
 		simple-audio-card,codec {
-				sound-dai = <&pcm5102a>;
+				sound-dai = <&adau1452>;
 		};
-	};
-
-	pcm5102a: pcm5102a {
-		compatible = "ti,pcm5102a";
-		#sound-dai-cells = <0>;
 	};
 
 };
@@ -213,6 +208,13 @@
 			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
 			0x08 /* MFP5 AIC32X4_MFP5_GPIO_INPUT */
 		>;
+	};
+
+	adau1452: adau1452@38 {
+		compatible = "adi,adau1452";
+		reg = <0x38>;
+		#sound-dai-cells = <0>;
+		/* Add optional properties here if your board has reset/regulators */
 	};
 };
 
