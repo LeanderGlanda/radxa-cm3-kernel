@@ -214,7 +214,15 @@
 		compatible = "adi,adau1452";
 		reg = <0x38>;
 		#sound-dai-cells = <0>;
-		/* Add optional properties here if your board has reset/regulators */
+
+		/* apply PLL and MCLK settings at probe */
+		adi,use-pll;
+		adi,pll-feedback = <0x0060>;    /* F000 = 0x0060 (default) */
+		adi,pll-prescale = <0x0003>;    /* F001 = 0x0003 (divide-by-8) */
+		adi,mclk-out = <0x0007>;        /* F005 = 0x0007 (enable CLKOUT + prevdiv bits) */
+		adi,boot-samplerate = <192000>; /* sample rate used for sigmadsp_setup() during boot */
+		adi,start-core-on-probe;        /* do START sequence automatically on probe */
+
 	};
 };
 

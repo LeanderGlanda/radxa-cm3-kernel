@@ -32,6 +32,7 @@ struct adau1452 {
 	u32 pll_prescale;
 	bool start_core_on_probe;
 	u32 mclk_out;
+	unsigned int boot_samplerate;
 };
 
 static const struct regmap_config adau1452_regmap_config = {
@@ -57,6 +58,8 @@ static const struct regmap_config adau1452_regmap_config = {
 #define ADAU1452_START_CORE  0xF402
 #define ADAU1452_KILL_CORE   0xF403
 #define ADAU1452_START_ADDR  0xF404
+/* Hibernate register */
+#define ADAU1452_HIBERNATE   0xF400
 
 /* Minimal DAI ops: no real hardware config, accept common formats/rates */
 static int adau1452_hw_params(struct snd_pcm_substream *substream,
@@ -376,56 +379,82 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 {
 	int ret;
 	struct device *dev = &client->dev;
+	/* Follow datasheet recommended sequence for safe program/param loading */
+	/* 1) Kill core / Hibernate sequence to stop DSP while programming large RAM */
+	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000); /* Hibernate off */
+	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0001); /* Hibernate on */
 
-	if (chip->use_pll) {
-		/* program PLL dividers if provided */
-		dev_info(dev, "adau1452: configuring PLL fb=%u prescale=%u\n",
-				chip->pll_feedback, chip->pll_prescale);
-		if (chip->pll_feedback)
-			adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback);
-		if (chip->pll_prescale)
-			adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale);
+	/* stop core */
+	adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0001);
 
-		/* enable PLL */
-		adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
+	/* 2) Program PLL and MCLK settings (write MCLK_OUT before enabling PLL) */
+	if (chip->pll_feedback)
+		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback);
+	else
+		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, 0x0060); /* default 0x0060 */
 
-		/* wait for PLL lock */
-		{
-			int i;
-			for (i = 0; i < 100; i++) {
-				uint8_t buf[2];
-				if (chip->regmap)
-					ret = regmap_raw_read(chip->regmap, ADAU1452_PLL_LOCK, buf, 2);
-				else if (chip->sigmadsp && chip->sigmadsp->read)
-					ret = chip->sigmadsp->read(chip->sigmadsp->control_data,
-							ADAU1452_PLL_LOCK, buf, 2);
-				else
-					ret = -ENOSYS;
+	/* user requested value for PLL_CTRL1 (divide by 8 -> 0x0003) */
+	adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale ? chip->pll_prescale : 0x0003);
 
-				if (!ret) {
-					if (buf[1] || buf[0]) /* non-zero lock */
-						break;
-				}
-				msleep(1);
+	/* set PLL clock source to PLL (0x0001) */
+	adau1452_write_reg16(chip, ADAU1452_PLL_CLK_SRC, 0x0001);
+
+	/* MCLK_OUT: write before enabling PLL. Use user-provided mclk_out or default 0x0007 */
+	adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007);
+
+	/* 3) Enable PLL */
+	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
+
+	/* 4) Wait for PLL lock (max ~11ms per datasheet); poll PLL_LOCK */
+	{
+		int i;
+		for (i = 0; i < 200; i++) {
+			uint8_t buf[2];
+			if (chip->regmap)
+				ret = regmap_raw_read(chip->regmap, ADAU1452_PLL_LOCK, buf, 2);
+			else if (chip->sigmadsp && chip->sigmadsp->read)
+				ret = chip->sigmadsp->read(chip->sigmadsp->control_data,
+						ADAU1452_PLL_LOCK, buf, 2);
+			else
+				ret = -ENOSYS;
+
+			if (!ret) {
+				if (buf[1] || buf[0]) /* non-zero lock */
+					break;
 			}
-			if (ret)
-				dev_warn(dev, "adau1452: failed to read PLL_LOCK: %d\n", ret);
-			else if (i == 100)
-				dev_warn(dev, "adau1452: PLL_LOCK timeout\n");
+			usleep_range(100, 200); /* wait a bit */
 		}
+		if (ret)
+			dev_warn(dev, "adau1452: failed to read PLL_LOCK: %d\n", ret);
+		else if (i == 200)
+			dev_warn(dev, "adau1452: PLL_LOCK timeout\n");
 	}
 
-	if (chip->mclk_out)
-		adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out);
+	/* 5) Power enable registers (optional) - leave defaults for safety */
 
-	if (chip->start_core_on_probe) {
-		/* set START_ADDRESS to a common program address if not zero */
-		/* Common SigmaStudio export used 0xC000 in your bin; write that */
-		adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
-		/* trigger START_CORE */
-		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
-		dev_info(dev, "adau1452: started core (START_CORE)");
+	/* 6) Write program/parameter RAM (use sigmadsp_setup with configured samplerate) */
+	if (chip->boot_samplerate && chip->sigmadsp) {
+		ret = sigmadsp_setup(chip->sigmadsp, chip->boot_samplerate);
+		if (ret)
+			dev_warn(dev, "sigmadsp_setup failed during boot sequence: %d\n", ret);
 	}
+
+	/* 7) Set START_ADDRESS and START_PULSE, clear KILL_CORE, start core */
+	adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
+	adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002); /* internal pulse */
+
+	/* remove kill core */
+	adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000);
+
+	/* START_CORE low->high sequence: write 0 then 1 */
+	adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000);
+	adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
+	usleep_range(50, 100); /* wait 50us for program to execute */
+
+	/* 8) Clear Hibernate (turn hibernate off) */
+	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000);
+
+	dev_info(dev, "adau1452: boot sequence complete\n");
 }
 
 static int adau1452_probe(struct i2c_client *client,
@@ -446,6 +475,7 @@ static int adau1452_probe(struct i2c_client *client,
 		of_property_read_u32(client->dev.of_node, "adi,pll-prescale", &chip->pll_prescale);
 		chip->start_core_on_probe = of_property_read_bool(client->dev.of_node, "adi,start-core-on-probe");
 		of_property_read_u32(client->dev.of_node, "adi,mclk-out", &chip->mclk_out);
+		of_property_read_u32(client->dev.of_node, "adi,boot-samplerate", &chip->boot_samplerate);
 	}
 
 	/* initialize regmap over raw i2c access so we can do regmap writes */
