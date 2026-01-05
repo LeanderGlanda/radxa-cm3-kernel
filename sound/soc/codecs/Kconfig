@@ -398,6 +398,9 @@ config SND_SOC_ADAU1452
 	  controls; it only loads the firmware blob (adau1452.bin).
 
 	select SND_SOC_SIGMADSP_I2C
+	select SND_SOC_SIGMADSP_REGMAP
+	select SND_SOC_ADAU_UTILS
+	select REGMAP_I2C
 
 config SND_SOC_ADAU17X1
 	tristate
