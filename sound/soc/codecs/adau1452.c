@@ -35,11 +35,17 @@ struct adau1452 {
 	unsigned int boot_samplerate;
 };
 
+/* forward declare regmap callbacks */
+static int adau1452_reg_write(void *context, unsigned int reg, unsigned int value);
+static int adau1452_reg_read(void *context, unsigned int reg, unsigned int *value);
+
 static const struct regmap_config adau1452_regmap_config = {
 	.reg_bits = 16,
 	.val_bits = 16,
 	.max_register = 0xffff,
 	.cache_type = REGCACHE_NONE,
+	.reg_write = adau1452_reg_write,
+	.reg_read = adau1452_reg_read,
 };
 
 /* ADAU1452 safeload register addresses */
@@ -101,13 +107,6 @@ static struct snd_soc_dai_driver adau1452_dai = {
 	.ops = &adau1452_dai_ops,
 };
 
-static int adau1452_component_probe(struct snd_soc_component *component);
-
-static const struct snd_soc_component_driver adau1452_component_driver = {
-	.name = "adau1452",
-	.probe = adau1452_component_probe,
-};
-
 static int adau1452_component_probe(struct snd_soc_component *component)
 {
 	struct i2c_client *client = to_i2c_client(component->dev);
@@ -139,6 +138,12 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 
 	return ret;
 }
+
+
+static const struct snd_soc_component_driver adau1452_component_driver = {
+	.name = "adau1452",
+	.probe = adau1452_component_probe,
+};
 
 /* Sysfs: echo "addr len" > read_mem to dump dsp memory via sigmadsp read */
 static ssize_t read_mem_store(struct device *dev,
@@ -296,6 +301,59 @@ static int adau1452_safeload(struct sigmadsp *sigmadsp, unsigned int addr,
 static const struct sigmadsp_ops adau1452_sigmadsp_ops = {
 	.safeload = adau1452_safeload,
 };
+
+/* regmap callbacks: 16-bit BE register address, 16-bit BE value */
+static int adau1452_reg_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct i2c_client *client = context;
+	uint8_t buf[4];
+	int ret;
+
+	/* pack register addr (be16) and value (be16) */
+	buf[0] = reg >> 8;
+	buf[1] = reg & 0xff;
+	buf[2] = (value >> 8) & 0xff;
+	buf[3] = value & 0xff;
+
+	ret = i2c_master_send(client, buf, 4);
+	if (ret < 0)
+		return ret;
+	else if (ret != 4)
+		return -EIO;
+
+	return 0;
+}
+
+static int adau1452_reg_read(void *context, unsigned int reg, unsigned int *value)
+{
+	struct i2c_client *client = context;
+	uint8_t send_buf[2];
+	uint8_t recv_buf[2];
+	struct i2c_msg msgs[2];
+	int ret;
+
+	send_buf[0] = reg >> 8;
+	send_buf[1] = reg & 0xff;
+
+	msgs[0].addr = client->addr;
+	msgs[0].flags = 0;
+	msgs[0].len = sizeof(send_buf);
+	msgs[0].buf = send_buf;
+
+	msgs[1].addr = client->addr;
+	msgs[1].flags = I2C_M_RD;
+	msgs[1].len = sizeof(recv_buf);
+	msgs[1].buf = recv_buf;
+
+	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
+	if (ret < 0)
+		return ret;
+	else if (ret != ARRAY_SIZE(msgs))
+		return -EIO;
+
+	*value = (recv_buf[0] << 8) | recv_buf[1];
+	return 0;
+}
 
 /* Apply basic board configuration (pll, mclk out, start core) read from DT */
 static void adau1452_apply_board_setup(struct i2c_client *client,
