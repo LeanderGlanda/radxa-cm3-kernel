@@ -143,19 +143,13 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 
 	/* If requested via DT, start the DSP core now (START sequence) */
 	if (chip->start_core_on_probe) {
-		if (adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000))
-			dev_warn(component->dev, "failed to write START_ADDR\n");
-		if (adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002))
-			dev_warn(component->dev, "failed to write START_PULSE\n");
-		if (adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000))
-			dev_warn(component->dev, "failed to clear KILL_CORE\n");
-		if (adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000))
-			dev_warn(component->dev, "failed to write START_CORE=0\n");
-		if (adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001))
-			dev_warn(component->dev, "failed to write START_CORE=1\n");
+		adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
+		adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
+		adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000);
+		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000);
+		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
 		usleep_range(50, 100);
-		if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000))
-			dev_warn(component->dev, "failed to clear HIBERNATE after start\n");
+		adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000);
 		dev_info(component->dev, "adau1452: core started via DT auto-start\n");
 	}
 
@@ -225,7 +219,7 @@ static DEVICE_ATTR_WO(read_mem);
 static int adau1452_write_reg16(struct adau1452 *chip, unsigned int reg,
 					unsigned int value)
 {
-	int ret = 0;
+	int ret;
 
 	if (!chip)
 		return -ENODEV;
@@ -236,8 +230,9 @@ static int adau1452_write_reg16(struct adau1452 *chip, unsigned int reg,
 	/* write 16-bit control register via regmap API */
 	ret = regmap_write(chip->regmap, reg, (u16)value);
 	if (ret)
-		dev_err(chip->sigmadsp ? chip->sigmadsp->dev : NULL,
-				"regmap write 0x%04x failed: %d\n", reg, ret);
+		dev_err(chip->sigmadsp->dev,
+				"adau1452: reg write 0x%04x = 0x%04x failed: %d\n",
+				reg, (unsigned int)(value & 0xffff), ret);
 
 	return ret;
 }
@@ -386,39 +381,30 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	struct device *dev = &client->dev;
 	/* Follow datasheet recommended sequence for safe program/param loading */
 	/* 1) Kill core / Hibernate sequence to stop DSP while programming large RAM */
-	if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000))
-		dev_warn(dev, "failed to clear HIBERNATE before set\n");
-	if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0001))
-		dev_warn(dev, "failed to set HIBERNATE\n");
+	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000);
+	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0001);
 
 	/* stop core */
-	if (adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0001))
-		dev_warn(dev, "failed to set KILL_CORE\n");
+	adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0001);
 
 	/* 2) Program PLL and MCLK settings (write MCLK_OUT before enabling PLL) */
 	if (chip->pll_feedback) {
-		if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback))
-			dev_warn(dev, "failed to write PLL_CTRL0\n");
+		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback);
 	} else {
-		if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, 0x0060))
-			dev_warn(dev, "failed to write default PLL_CTRL0\n");
+		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, 0x0060);
 	}
 
 	/* user requested value for PLL_CTRL1 (divide by 8 -> 0x0003) */
-	if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale ? chip->pll_prescale : 0x0003))
-		dev_warn(dev, "failed to write PLL_CTRL1\n");
+	adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale ? chip->pll_prescale : 0x0003);
 
 	/* set PLL clock source to PLL (0x0001) */
-	if (adau1452_write_reg16(chip, ADAU1452_PLL_CLK_SRC, 0x0001))
-		dev_warn(dev, "failed to write PLL_CLK_SRC\n");
+	adau1452_write_reg16(chip, ADAU1452_PLL_CLK_SRC, 0x0001);
 
 	/* MCLK_OUT: write before enabling PLL. Use user-provided mclk_out or default 0x0007 */
-	if (adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007))
-		dev_warn(dev, "failed to write MCLK_OUT\n");
+	adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007);
 
 	/* 3) Enable PLL */
-	if (adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001))
-		dev_warn(dev, "failed to write PLL_ENABLE\n");
+	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
 
 	/* 4) Wait for PLL lock (max ~11ms per datasheet); poll PLL_LOCK */
 	{
