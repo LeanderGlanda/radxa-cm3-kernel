@@ -166,8 +166,6 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 
 	/* If requested via DT, start the DSP core now (START sequence) */
 	if (chip->start_core_on_probe) {
-		adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
-		adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
 		adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000);
 		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000);
 		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
@@ -426,7 +424,40 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	/* MCLK_OUT: write before enabling PLL. Use user-provided mclk_out or default 0x0007 */
 	adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007);
 
-	/* Configure Clock Generator 1 numerator/denominator: set N=0x004, M default 0x006 */
+	/* 3) Enable PLL */
+	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
+
+	/* 4) Wait for PLL lock (max ~11ms per datasheet); poll PLL_LOCK */
+	{
+		int i;
+		unsigned int val = 0;
+		for (i = 0; i < 200; i++) {
+			ret = regmap_read(chip->regmap, ADAU1452_PLL_LOCK, &val);
+			if (!ret) {
+				if (val) /* non-zero lock */
+					break;
+			}
+			usleep_range(100, 200); /* wait a bit */
+		}
+		if (ret)
+			dev_warn(dev, "adau1452: failed to read PLL_LOCK: %d\n", ret);
+		else if (i == 200)
+			dev_warn(dev, "adau1452: PLL_LOCK timeout\n");
+	}
+
+	/* 5) Power enable registers (optional) - leave defaults for safety */
+
+    /* POWER_ENABLE0: enable everything except CLK_GEN3_PWR (bit 12 cleared) */
+	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE0, 0x0FFF);
+
+	/* POWER_ENABLE1: leave as 0x0000 per request */
+	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE1, 0x0000);
+
+    // try stuff /////////////////////////////////////////////////////////////////////////////////////////////////////////
+    adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
+	adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
+
+    	/* Configure Clock Generator 1 numerator/denominator: set N=0x004, M default 0x006 */
 	adau1452_write_reg16(chip, ADAU1452_CLK_GEN1_M, 0x0006);
 	adau1452_write_reg16(chip, ADAU1452_CLK_GEN1_N, 0x0004);
 
@@ -457,35 +488,7 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 
 	/* SERIAL_BYTE_6_1: TRISTATE=0 (drive every output channel), CLK_DOMAIN=00 (CLK_GEN1), FS=010 (base rate) */
 	adau1452_write_reg16(chip, ADAU1452_SERIAL_BYTE_6_1, 0x0002);
-
-	/* 3) Enable PLL */
-	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
-
-	/* 4) Wait for PLL lock (max ~11ms per datasheet); poll PLL_LOCK */
-	{
-		int i;
-		unsigned int val = 0;
-		for (i = 0; i < 200; i++) {
-			ret = regmap_read(chip->regmap, ADAU1452_PLL_LOCK, &val);
-			if (!ret) {
-				if (val) /* non-zero lock */
-					break;
-			}
-			usleep_range(100, 200); /* wait a bit */
-		}
-		if (ret)
-			dev_warn(dev, "adau1452: failed to read PLL_LOCK: %d\n", ret);
-		else if (i == 200)
-			dev_warn(dev, "adau1452: PLL_LOCK timeout\n");
-	}
-
-	/* 5) Power enable registers (optional) - leave defaults for safety */
-
-    /* POWER_ENABLE0: enable everything except CLK_GEN3_PWR (bit 12 cleared) */
-	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE0, 0x0FFF);
-
-	/* POWER_ENABLE1: leave as 0x0000 per request */
-	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE1, 0x0000);
+    
 
 	/* 6) Program/parameter RAM upload and core START are performed in
 	 * component_probe after sigmadsp_attach to ensure controls are active.
