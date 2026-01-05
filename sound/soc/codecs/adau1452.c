@@ -70,6 +70,29 @@ static const struct regmap_config adau1452_regmap_config = {
 /* Hibernate register */
 #define ADAU1452_HIBERNATE   0xF400
 
+/* Clock generator registers */
+#define ADAU1452_CLK_GEN1_M  0xF020
+#define ADAU1452_CLK_GEN1_N  0xF021
+#define ADAU1452_CLK_GEN2_M  0xF022
+#define ADAU1452_CLK_GEN2_N  0xF023
+
+/* Power enable registers */
+#define ADAU1452_POWER_ENABLE0 0xF050
+#define ADAU1452_POWER_ENABLE1 0xF051
+
+/* ASRC input selector base (ASRC_INPUT0 .. ASRC_INPUT7) */
+#define ADAU1452_ASRC_INPUT0 0xF100
+/* ASRC output rate registers */
+#define ADAU1452_ASRC_OUT_RATE0 0xF140
+
+/* SOUT_SOURCE registers base */
+#define ADAU1452_SOUT_SOURCE0 0xF180
+
+/* Serial port configuration for SDATA_OUT2 (SERIAL_BYTE_6_0) */
+#define ADAU1452_SERIAL_BYTE_6_0 0xF218
+/* SERIAL_BYTE_x_1 base for control1 registers */
+#define ADAU1452_SERIAL_BYTE_6_1 0xF219
+
 /* Minimal DAI ops: no real hardware config, accept common formats/rates */
 static int adau1452_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
@@ -403,6 +426,38 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	/* MCLK_OUT: write before enabling PLL. Use user-provided mclk_out or default 0x0007 */
 	adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007);
 
+	/* Configure Clock Generator 1 numerator/denominator: set N=0x004, M default 0x006 */
+	adau1452_write_reg16(chip, ADAU1452_CLK_GEN1_M, 0x0006);
+	adau1452_write_reg16(chip, ADAU1452_CLK_GEN1_N, 0x0004);
+
+	/* Configure Clock Generator 2 registers (leave defaults for M/N) */
+	adau1452_write_reg16(chip, ADAU1452_CLK_GEN2_M, 0x0009);
+	adau1452_write_reg16(chip, ADAU1452_CLK_GEN2_N, 0x0001);
+
+	/* ASRC_INPUT0: set ASRC_SIN_CHANNEL=0b01000 (0x08 << 3 = 0x40), ASRC_SOURCE=0b001 */
+	adau1452_write_reg16(chip, ADAU1452_ASRC_INPUT0, (0x08 << 3) | 0x1);
+
+    /* ASRC_OUT_RATE0: use DSP core audio sampling rate (0b0101) */
+    adau1452_write_reg16(chip, ADAU1452_ASRC_OUT_RATE0, 0x0005);
+
+    /* Configure SOUT_SOURCE0..SOUT_SOURCE23 to use DSP core outputs (SOUT_SOURCE = 0b010) */
+    {
+        int i;
+        for (i = 0; i < 24; i++)
+            adau1452_write_reg16(chip, ADAU1452_SOUT_SOURCE0 + i, 0x0002);
+    }
+
+    /* Configure SDATA_OUT2: SERIAL_BYTE_6_0 -> master mode for LRCLK/BCLK,
+        * 50% LRCLK duty, positive LRCLK/BCLK polarity, 32-bit words, I2S, 2 channels.
+        * Bits assembled per datasheet: 15:13=100 (lrclk src master), 12:10=100 (bclk src master),
+        * 9=0 (lrclk_mode 50%), 8=1 lrclk polarity, 7=1 bclk polarity, 6:5=10 (32 bits), 4:3=00 (I2S), 2:0=000 (2 channels)
+        * Value = (4<<13) | (4<<10) | (1<<8) | (1<<7) | (2<<5) = 0x91C0
+        */
+    adau1452_write_reg16(chip, ADAU1452_SERIAL_BYTE_6_0, 0x91C0);
+
+	/* SERIAL_BYTE_6_1: TRISTATE=0 (drive every output channel), CLK_DOMAIN=00 (CLK_GEN1), FS=010 (base rate) */
+	adau1452_write_reg16(chip, ADAU1452_SERIAL_BYTE_6_1, 0x0002);
+
 	/* 3) Enable PLL */
 	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
 
@@ -425,6 +480,12 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	}
 
 	/* 5) Power enable registers (optional) - leave defaults for safety */
+
+    /* POWER_ENABLE0: enable everything except CLK_GEN3_PWR (bit 12 cleared) */
+	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE0, 0x0FFF);
+
+	/* POWER_ENABLE1: leave as 0x0000 per request */
+	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE1, 0x0000);
 
 	/* 6) Program/parameter RAM upload and core START are performed in
 	 * component_probe after sigmadsp_attach to ensure controls are active.
