@@ -13,18 +13,44 @@
 	model = "Radxa CM3 AudioPlatine Board";
 	compatible = "radxa,cm3-io", "radxa,cm3", "rockchip,rk3566";
 
-
-	/*vcc_sd: sdmmc-regulator {
+	vdd_24v: vdd-24v-input {
 		compatible = "regulator-fixed";
-		gpio = <&gpio0 RK_PA5 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&sdmmc_pwren>;
-		regulator-name = "vcc_sd";
+		regulator-name = "vdd_24v_input";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <26000000>;
+	};
+
+	audioplatine_5v: 5v-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "audioplatine_5v";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vdd_24v>;
+	};
+
+	audioplatine_3v3: 3v3-regulator-baseboard {
+		compatible = "regulator-fixed";
+		regulator-name = "audioplatine_3v3";
+		regulator-always-on;
+		regulator-boot-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		startup-delay-us = <100000>;
-		vin-supply = <&vcc3v3_sys>;
-	};*/
+		vin-supply = <&vdd_24v>;
+	};
+
+	audioplatine_1v8: 1v8-regulator-baseboard {
+		compatible = "regulator-fixed";
+		regulator-name = "audioplatine_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vdd_24v>;
+	};
 
 	sound_i2s1 {
 		compatible = "simple-audio-card";
@@ -145,6 +171,12 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&max98396_a_reset>;
 		reset-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
+
+		dvdd-supply = <&audioplatine_1v8>;
+		dvddio-supply = <&audioplatine_1v8>;
+		avdd-supply = <&audioplatine_1v8>;
+		pvdd-supply = <&vdd_24v>;
+		vbat-supply = <&audioplatine_5v>;
 	};
 
 	max98396_b: amplifier@3c {
@@ -158,6 +190,29 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&max98396_b_reset>;
 		reset-gpios = <&gpio4 RK_PD1 GPIO_ACTIVE_LOW>;
+
+		dvdd-supply = <&audioplatine_1v8>;
+		dvddio-supply = <&audioplatine_1v8>;
+		avdd-supply = <&audioplatine_1v8>;
+		pvdd-supply = <&vdd_24v>;
+		vbat-supply = <&audioplatine_5v>;
+	};
+
+	codec: tlv320aic32x6@18 {
+	compatible = "ti,tlv320aic32x6";
+	reg = <0x18>;
+	//clocks = <&clks 201>;
+	//clock-names = "mclk";
+	iov-supply = <&audioplatine_3v3>;
+	dv-supply = <&audioplatine_1v8>;
+	av-supply = <&audioplatine_1v8>;
+	aic32x4-gpio-func= <
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0x04 /* MFP3 AIC32X4_MFP3_GPIO_ENABLED */
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0x08 /* MFP5 AIC32X4_MFP5_GPIO_INPUT */
+		>;
 	};
 };
 
