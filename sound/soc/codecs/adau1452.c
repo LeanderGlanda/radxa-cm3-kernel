@@ -35,6 +35,9 @@ struct adau1452 {
 	unsigned int boot_samplerate;
 };
 
+/* forward declarations for register helpers */
+static int adau1452_write_reg16(struct adau1452 *chip, unsigned int reg, unsigned int value);
+
 /* forward declare regmap callbacks */
 static int adau1452_reg_write(void *context, unsigned int reg, unsigned int value);
 static int adau1452_reg_read(void *context, unsigned int reg, unsigned int *value);
@@ -123,6 +126,8 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 		return ret;
 	}
 
+	dev_info(component->dev, "adau1452: sigmadsp attached\n");
+
 	/* store chip pointer for later retrieval via snd_soc_component_get_drvdata */
 	snd_soc_component_set_drvdata(component, chip);
 
@@ -134,6 +139,18 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 		ret = sigmadsp_setup(chip->sigmadsp, chip->boot_samplerate);
 		if (ret)
 			dev_warn(component->dev, "sigmadsp_setup failed in component_probe: %d\n", ret);
+	}
+
+	/* If requested via DT, start the DSP core now (START sequence) */
+	if (chip->start_core_on_probe) {
+		adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
+		adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
+		adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000);
+		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000);
+		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
+		usleep_range(50, 100);
+		adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000);
+		dev_info(component->dev, "adau1452: core started via DT auto-start\n");
 	}
 
 	return ret;
@@ -434,22 +451,20 @@ static int adau1452_probe(struct i2c_client *client,
 		of_property_read_u32(client->dev.of_node, "adi,boot-samplerate", &chip->boot_samplerate);
 	}
 
-	/* initialize regmap over raw i2c access so we can do regmap writes */
+	/* initialize regmap over i2c access; regmap is required */
 	chip->regmap = devm_regmap_init(&client->dev, NULL, client, &adau1452_regmap_config);
-	if (IS_ERR(chip->regmap))
-		chip->regmap = NULL;
+	if (IS_ERR(chip->regmap)) {
+		ret = PTR_ERR(chip->regmap);
+		dev_err(&client->dev, "failed to init regmap: %d\n", ret);
+		return ret;
+	}
 
-	/* Initialize sigmadsp instance for this device, which loads firmware */
-#ifdef CONFIG_SND_SOC_SIGMADSP_REGMAP
-	if (chip->regmap)
-		chip->sigmadsp = devm_sigmadsp_init_regmap(&client->dev, chip->regmap,
-				&adau1452_sigmadsp_ops, ADAU1452_FIRMWARE);
-	else
-#endif
-		chip->sigmadsp = devm_sigmadsp_init_i2c(client, &adau1452_sigmadsp_ops, ADAU1452_FIRMWARE);
+	/* Initialize sigmadsp instance using regmap backend */
+	chip->sigmadsp = devm_sigmadsp_init_regmap(&client->dev, chip->regmap,
+			&adau1452_sigmadsp_ops, ADAU1452_FIRMWARE);
 	if (IS_ERR(chip->sigmadsp)) {
 		ret = PTR_ERR(chip->sigmadsp);
-		dev_err(&client->dev, "failed to init sigmadsp: %d\n", ret);
+		dev_err(&client->dev, "failed to init sigmadsp (regmap): %d\n", ret);
 		return ret;
 	}
 
