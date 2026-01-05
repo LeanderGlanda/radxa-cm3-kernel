@@ -143,13 +143,19 @@ static int adau1452_component_probe(struct snd_soc_component *component)
 
 	/* If requested via DT, start the DSP core now (START sequence) */
 	if (chip->start_core_on_probe) {
-		adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
-		adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
-		adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000);
-		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000);
-		adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001);
+		if (adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000))
+			dev_warn(component->dev, "failed to write START_ADDR\n");
+		if (adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002))
+			dev_warn(component->dev, "failed to write START_PULSE\n");
+		if (adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0000))
+			dev_warn(component->dev, "failed to clear KILL_CORE\n");
+		if (adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0000))
+			dev_warn(component->dev, "failed to write START_CORE=0\n");
+		if (adau1452_write_reg16(chip, ADAU1452_START_CORE, 0x0001))
+			dev_warn(component->dev, "failed to write START_CORE=1\n");
 		usleep_range(50, 100);
-		adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000);
+		if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000))
+			dev_warn(component->dev, "failed to clear HIBERNATE after start\n");
 		dev_info(component->dev, "adau1452: core started via DT auto-start\n");
 	}
 
@@ -380,29 +386,39 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	struct device *dev = &client->dev;
 	/* Follow datasheet recommended sequence for safe program/param loading */
 	/* 1) Kill core / Hibernate sequence to stop DSP while programming large RAM */
-	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000); /* Hibernate off */
-	adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0001); /* Hibernate on */
+	if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0000))
+		dev_warn(dev, "failed to clear HIBERNATE before set\n");
+	if (adau1452_write_reg16(chip, ADAU1452_HIBERNATE, 0x0001))
+		dev_warn(dev, "failed to set HIBERNATE\n");
 
 	/* stop core */
-	adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0001);
+	if (adau1452_write_reg16(chip, ADAU1452_KILL_CORE, 0x0001))
+		dev_warn(dev, "failed to set KILL_CORE\n");
 
 	/* 2) Program PLL and MCLK settings (write MCLK_OUT before enabling PLL) */
-	if (chip->pll_feedback)
-		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback);
-	else
-		adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, 0x0060); /* default 0x0060 */
+	if (chip->pll_feedback) {
+		if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, chip->pll_feedback))
+			dev_warn(dev, "failed to write PLL_CTRL0\n");
+	} else {
+		if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL0, 0x0060))
+			dev_warn(dev, "failed to write default PLL_CTRL0\n");
+	}
 
 	/* user requested value for PLL_CTRL1 (divide by 8 -> 0x0003) */
-	adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale ? chip->pll_prescale : 0x0003);
+	if (adau1452_write_reg16(chip, ADAU1452_PLL_CTRL1, chip->pll_prescale ? chip->pll_prescale : 0x0003))
+		dev_warn(dev, "failed to write PLL_CTRL1\n");
 
 	/* set PLL clock source to PLL (0x0001) */
-	adau1452_write_reg16(chip, ADAU1452_PLL_CLK_SRC, 0x0001);
+	if (adau1452_write_reg16(chip, ADAU1452_PLL_CLK_SRC, 0x0001))
+		dev_warn(dev, "failed to write PLL_CLK_SRC\n");
 
 	/* MCLK_OUT: write before enabling PLL. Use user-provided mclk_out or default 0x0007 */
-	adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007);
+	if (adau1452_write_reg16(chip, ADAU1452_MCLK_OUT, chip->mclk_out ? chip->mclk_out : 0x0007))
+		dev_warn(dev, "failed to write MCLK_OUT\n");
 
 	/* 3) Enable PLL */
-	adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001);
+	if (adau1452_write_reg16(chip, ADAU1452_PLL_ENABLE, 0x0001))
+		dev_warn(dev, "failed to write PLL_ENABLE\n");
 
 	/* 4) Wait for PLL lock (max ~11ms per datasheet); poll PLL_LOCK */
 	{
@@ -459,19 +475,24 @@ static int adau1452_probe(struct i2c_client *client,
 		return ret;
 	}
 
-	/* Initialize sigmadsp instance using regmap backend */
-	chip->sigmadsp = devm_sigmadsp_init_regmap(&client->dev, chip->regmap,
-			&adau1452_sigmadsp_ops, ADAU1452_FIRMWARE);
+	/* Use the i2c-based sigmadsp initializer to avoid a hard dependency
+	 * on the optional regmap helper symbol which may not be present in
+	 * all kernel builds. The regmap callbacks implemented above are
+	 * still used for regmap-based register access.
+	 */
+	chip->sigmadsp = devm_sigmadsp_init_i2c(client, &adau1452_sigmadsp_ops,
+			ADAU1452_FIRMWARE);
 	if (IS_ERR(chip->sigmadsp)) {
 		ret = PTR_ERR(chip->sigmadsp);
-		dev_err(&client->dev, "failed to init sigmadsp (regmap): %d\n", ret);
+		dev_err(&client->dev, "failed to init sigmadsp: %d\n", ret);
 		return ret;
 	}
 
-	/* store pointer for future use */
-	i2c_set_clientdata(client, chip);
+    /* store pointer for future use */
+    i2c_set_clientdata(client, chip);
 
-	dev_info(&client->dev, "ADAU1452 firmware loader initialized\n");
+    dev_info(&client->dev, "ADAU1452 firmware loader initialized: pll_feedback=0x%x pll_prescale=0x%x mclk_out=0x%x boot_samplerate=%u start_core_on_probe=%d\n",
+	    chip->pll_feedback, chip->pll_prescale, chip->mclk_out, chip->boot_samplerate, chip->start_core_on_probe);
 
 	/* register a minimal component/DAI so simple-audio-card can use it */
 	ret = devm_snd_soc_register_component(&client->dev,
