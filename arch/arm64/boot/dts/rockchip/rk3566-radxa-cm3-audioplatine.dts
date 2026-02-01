@@ -18,8 +18,9 @@
 		regulator-name = "vdd_24v_input";
 		regulator-always-on;
 		regulator-boot-on;
-		regulator-min-microvolt = <6000000>;
-		regulator-max-microvolt = <26000000>;
+		// Supply has a range from 6V to 26V
+		regulator-min-microvolt = <24000000>;
+		regulator-max-microvolt = <24000000>;
 	};
 
 	audioplatine_5v: 5v-regulator {
@@ -52,7 +53,7 @@
 		vin-supply = <&vdd_24v>;
 	};
 
-	sound_i2s1 {
+	/*sound_i2s1 {
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "ADAU1452 I2S1-M1";
 		simple-audio-card,format = "i2s";
@@ -67,7 +68,26 @@
 		simple-audio-card,codec {
 				sound-dai = <&adau1452>;
 		};
-	};
+	};*/
+
+	sound_i2s1 {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "Max-Amp-System";
+		simple-audio-card,format = "i2s";
+		
+		// The CPU acts as the master for clocks
+		simple-audio-card,bitclock-master = <&cpu_master>;
+		simple-audio-card,frame-master = <&cpu_master>;
+
+		cpu_master: simple-audio-card,cpu {
+			sound-dai = <&i2s1_8ch>;
+		};
+
+		// Define BOTH amplifiers as the playback destination
+		simple-audio-card,codec {
+			sound-dai = <&max98396_a>, <&max98396_b>;
+    };
+};
 
 };
 
@@ -156,6 +176,8 @@
 	#size-cells = <0>;
 
 	max98396_a: amplifier@39 {
+		#sound-dai-cells = <0>;
+
 		compatible = "adi,max98397";
 		reg = <0x39>;
 
@@ -175,6 +197,8 @@
 	};
 
 	max98396_b: amplifier@3c {
+		#sound-dai-cells = <0>;
+
 		compatible = "adi,max98397";
 		reg = <0x3C>;
 
