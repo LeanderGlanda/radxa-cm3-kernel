@@ -53,24 +53,32 @@
 		vin-supply = <&vdd_24v>;
 	};
 
-	/*sound_i2s1 {
+	sound_i2s1 {
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "ADAU1452 I2S1-M1";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <64>;
 		simple-audio-card,frame-master = <&cpu_master>;
 		simple-audio-card,bitclock-master = <&cpu_master>;
+		bitclock-inversion;
+		frame-inversion;
 		status = "okay";
+
 
 		cpu_master: simple-audio-card,cpu {
 				sound-dai = <&i2s1_8ch>;
 		};
 		simple-audio-card,codec {
-				sound-dai = <&adau1452>;
+				sound-dai = <&pcm5102a>;
 		};
-	};*/
+	};
 
-	sound_i2s1 {
+	pcm5102a: pcm5102a {
+		compatible = "ti,pcm5102a";
+		#sound-dai-cells = <0>;
+	};
+
+	/*sound_i2s1 {
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "Max-Amp-System";
 		simple-audio-card,format = "i2s";
@@ -86,9 +94,7 @@
 		// Define BOTH amplifiers as the playback destination
 		simple-audio-card,codec {
 			sound-dai = <&max98396_a>, <&max98396_b>;
-    };
-};
-
+    };*/
 };
 
 &gpio_leds {
