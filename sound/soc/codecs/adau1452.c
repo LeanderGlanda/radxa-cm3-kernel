@@ -454,7 +454,7 @@ static void adau1452_apply_board_setup(struct i2c_client *client,
 	adau1452_write_reg16(chip, ADAU1452_POWER_ENABLE1, 0x0000);
 
     // try stuff /////////////////////////////////////////////////////////////////////////////////////////////////////////
-    adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0xC000);
+    adau1452_write_reg16(chip, ADAU1452_START_ADDR, 0x0000);
 	adau1452_write_reg16(chip, ADAU1452_START_PULSE, 0x0002);
 
     	/* Configure Clock Generator 1 numerator/denominator: set N=0x004, M default 0x006 */
